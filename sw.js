@@ -1,5 +1,5 @@
 /* Service worker: installable app, fast start, push notifications. */
-const CACHE = 'preschool-runs-v3';
+const CACHE = 'preschool-runs-v4';
 const SHELL = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/badge-96.png'];
 

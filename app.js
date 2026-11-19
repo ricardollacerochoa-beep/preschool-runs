@@ -440,37 +440,75 @@ function slotButton(date, kind){
   if (uid){
     const mine = uid === S.uid;
     return h('button',{class:'slot taken'+(mine?' mine':''), style:`background:${colorOf(uid)}`, onclick:()=> mine ? openMine(date,kind) : openOthers(date,kind,uid)},
-      head, h('div',{class:'who'}, nameOf(uid)));
+      head, h('div',{class:'who'}, avatar(uid,22), h('span',null,nameOf(uid))));
   }
   return h('button',{class:'slot open', disabled: (past || !canBook) ? true : null, onclick:()=>{ if (!past && canBook) book(date,kind,false); }},
-    head, h('div',{class:'who'}, past ? h('span',{class:'muted'},'—') : (canBook ? '+ I’ll do it' : h('span',{class:'muted'},'Open'))));
+    head, h('div',{class:'who'}, past ? h('span',{class:'muted'},'—') : (canBook ? '+ Take it' : h('span',{class:'muted'},'Open'))));
+}
+function nextSchoolDay(){
+  let d = new Date();
+  // after pick-up time on a weekday, look ahead to the next school day
+  const [ph, pm] = String(cfg().pickTime).split(':').map(Number);
+  if (d.getHours()*60 + d.getMinutes() > (ph*60 + pm + 60)) d = addDays(d, 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d = addDays(d, 1);
+  return iso(d);
+}
+function heroCard(){
+  const d = nextSchoolDay(), isToday = d === todayIso();
+  const canBook = !!member(S.uid);
+  const row = kind => {
+    const uid = S.slots[`${d}_${kind}`]?.userId;
+    return h('div',{class:'hero-row' + (uid ? '' : ' is-empty')},
+      h('div',{class:'hero-ic'}, KIND[kind].icon),
+      h('div',{class:'hero-txt'},
+        h('div',{class:'hero-k'}, `${KIND[kind].label} · ${slotTime(kind)}`),
+        uid ? h('div',{class:'hero-who'}, avatar(uid,22), nameOf(uid)) : h('div',{class:'hero-who'}, 'Nobody yet')),
+      uid ? h('button',{class:'hero-btn ghost', onclick:()=> uid === S.uid ? openMine(d,kind) : openOthers(d,kind,uid)}, 'Details')
+          : (canBook ? h('button',{class:'hero-btn', onclick:()=>book(d,kind,false)}, 'I’ll do it') : null));
+  };
+  return h('section',{class:'hero'},
+    h('div',{class:'hero-top'},
+      h('div',null,
+        h('div',{class:'hero-eyebrow'}, isToday ? 'Today' : 'Next up · ' + fromIso(d).toLocaleDateString('en-GB',{weekday:'long'})),
+        h('div',{class:'hero-date'}, fromIso(d).toLocaleDateString('en-GB',{day:'numeric', month:'long'}))),
+      h('div',{class:'hero-art'}, isToday ? '☀️' : '🌙')),
+    row('drop'), row('pick'));
 }
 function weekView(){
   const out = [];
   const news = unseen();
-  if (news.length) out.push(h('div',{class:'banner'},
-    h('div',null, h('b',null, `${news.length} change${news.length>1?'s':''}`), ' since you last checked'),
-    h('button',{class:'linkbtn', onclick:()=>{ S.tab='activity'; openActivity(); }}, 'See →')));
+  if (news.length) out.push(h('button',{class:'banner news', onclick:()=>{ S.tab='activity'; openActivity(); }},
+    h('span',{class:'pulse'}), h('div',null, h('b',null, `${news.length} new change${news.length>1?'s':''}`), ' from the family'), h('span',{class:'linkbtn'}, 'See →')));
   if (!standalone() && ls.get('hideInstall') !== '1') out.push(h('div',{class:'banner'},
-    h('div',null, '📲 Put Preschool Runs on your Home Screen'),
+    h('div',null, '📲 Add Preschool Runs to your Home Screen'),
     h('button',{class:'linkbtn', onclick:()=>showInstallHelp()}, 'How')));
+
+  out.push(heroCard());
 
   const ws = S.weekStart, we = addDays(ws,4);
   const thisWeek = iso(monday(new Date())) === iso(ws);
+  let filled = 0;
+  for (let i=0;i<5;i++){ const d = iso(addDays(ws,i)); if (S.slots[`${d}_drop`]) filled++; if (S.slots[`${d}_pick`]) filled++; }
   out.push(h('div',{class:'weeknav'},
     h('button',{'aria-label':'Previous week', onclick:()=>{ S.weekStart = addDays(S.weekStart,-7); render(); }}, '‹'),
-    h('div',{class:'label'}, h('b',null, `Week ${isoWeek(ws)}`),
+    h('div',{class:'label'}, h('b',null, thisWeek ? 'This week' : `Week ${isoWeek(ws)}`),
       h('span',null, `${ws.toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${we.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`),
-      thisWeek ? null : h('div',null, h('button',{onclick:()=>{ S.weekStart = monday(new Date()); render(); }}, 'Back to this week'))),
+      thisWeek ? null : h('button',{class:'today-link', onclick:()=>{ S.weekStart = monday(new Date()); render(); }}, 'Back to this week')),
     h('button',{'aria-label':'Next week', onclick:()=>{ S.weekStart = addDays(S.weekStart,7); render(); }}, '›')));
+  out.push(h('div',{class:'cover'},
+    h('div',{class:'cover-top'}, h('b',null, `${filled} of 10 runs covered`), h('span',null, filled === 10 ? 'All set 🎉' : `${10-filled} open`)),
+    h('div',{class:'bar'}, h('i',{style:`width:${filled*10}%`}))));
+
   const t = todayIso();
   for (let i=0;i<5;i++){
-    const d = iso(addDays(ws,i));
+    const d = iso(addDays(ws,i)), dt = fromIso(d);
     out.push(h('div',{class:'day'+(d===t?' today':'')+(d<t?' past':'')},
-      h('div',{class:'dayhead'}, h('b',null, fromIso(d).toLocaleDateString('en-GB',{weekday:'long'})), h('span',null, d===t ? 'Today' : fromIso(d).toLocaleDateString('en-GB',{day:'numeric',month:'short'}))),
+      h('div',{class:'dayhead'},
+        h('div',{class:'daynum'}, h('small',null, dt.toLocaleDateString('en-GB',{weekday:'short'})), String(dt.getDate())),
+        h('div',{class:'dayname'}, dt.toLocaleDateString('en-GB',{weekday:'long'}), d===t ? h('span',{class:'tag'}, 'Today') : null)),
       h('div',{class:'slots'}, slotButton(d,'drop'), slotButton(d,'pick'))));
   }
-  out.push(h('button',{class:'btn ghost', style:'margin-top:6px', onclick:()=>sheet(
+  out.push(h('button',{class:'btn ghost', style:'margin-top:8px', onclick:()=>sheet(
     h('h2',null,'This week for the preschool'),
     h('p',{class:'sub'},'Paste it into the preschool’s app or a message to the teachers.'),
     h('div',{class:'msgbox'}, weekSummary()),
@@ -559,9 +597,14 @@ function render(){
   // keep focus/typing in settings from being wiped by live updates
   if (S.tab === 'settings' && $app.contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) { drawTabs(); return; }
   const me = member(S.uid);
+  const hr = new Date().getHours();
+  const hello = hr < 5 ? 'Good night' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
   const header = h('header',{class:'top'},
-    h('div',{class:'brand'}, h('h1',null,'Preschool Runs'), h('small',null, cfg().child ? `${cfg().child}${cfg().preschool?' · '+cfg().preschool:''}` : 'Drop-offs & pick-ups')),
-    me ? h('button',{class:'mechip', onclick:()=>{ S.tab='settings'; render(); }}, avatar(S.uid), realName(S.uid)) : null);
+    h('div',{class:'brand'},
+      h('small',null, me ? `${hello}, ${realName(S.uid)}` : 'Preschool Runs'),
+      h('h1',null, S.tab === 'activity' ? 'Activity' : S.tab === 'settings' ? 'Settings' : (cfg().child ? `${cfg().child}’s week` : 'This week')),
+      cfg().preschool && S.tab === 'week' ? h('span',{class:'school'}, '🏫 ' + cfg().preschool) : null),
+    me ? h('button',{class:'mechip', 'aria-label':'My settings', onclick:()=>{ S.tab='settings'; render(); }}, avatar(S.uid, 40)) : null);
   const body = S.tab === 'activity' ? activityView() : S.tab === 'settings' ? settingsView() : weekView();
   $app.replaceChildren(header, ...body);
   drawTabs();
