@@ -84,8 +84,27 @@ const colorOf = id => member(id)?.color || '#8A8594';
 const childName = () => cfg().child || 'our little one';
 const slotTime = kind => kind === 'drop' ? cfg().dropTime : cfg().pickTime;
 function avatar(id, size){
-  const n = realName(id);
-  return h('span',{class:'dot', style:`background:${colorOf(id)};${size?`width:${size}px;height:${size}px`:''}`}, (n[0]||'?').toUpperCase());
+  const n = realName(id), pic = member(id)?.avatar;
+  const st = `background:${colorOf(id)};${size?`width:${size}px;height:${size}px;font-size:${Math.max(11, Math.round(size*0.42))}px`:''}`;
+  if (pic) return h('span',{class:'dot has-pic', style:st}, h('img',{src:pic, alt:n}));
+  return h('span',{class:'dot', style:st}, (n[0]||'?').toUpperCase());
+}
+// Resize a picked photo to a small square JPEG (centre crop) so it stays light and private
+function photoToDataUrl(file, px = 192){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      const s = Math.min(img.naturalWidth, img.naturalHeight);
+      const c = document.createElement('canvas'); c.width = c.height = px;
+      c.getContext('2d').drawImage(img, (img.naturalWidth - s)/2, (img.naturalHeight - s)/2, s, s, 0, 0, px, px);
+      URL.revokeObjectURL(url);
+      let q = 0.85, out = c.toDataURL('image/jpeg', q);
+      while (out.length > 70000 && q > 0.4){ q -= 0.1; out = c.toDataURL('image/jpeg', q); }
+      resolve(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src = url;
+  });
 }
 
 /* ───────────────────────── auth ───────────────────────── */
@@ -198,8 +217,8 @@ function openNewPassword(){
 const evFrom = r => ({ type:r.type, date:r.date, kind:r.kind, userId:r.user_id, prevUserId:r.prev_user_id, at:Number(r.at) });
 async function loadConfig(){ const { data } = await sb.from('config').select('*').eq('id',1).maybeSingle(); if (data) S.config = data; render(); }
 async function loadMembers(){
-  const { data, error } = await sb.from('members').select('user_id,name,color'); if (error) return;
-  const m = {}; for (const r of data) m[r.user_id] = { name:String(r.name), color:String(r.color||'#8A8594') };
+  const { data, error } = await sb.from('members').select('user_id,name,color,avatar'); if (error) return;
+  const m = {}; for (const r of data) m[r.user_id] = { name:String(r.name), color:String(r.color||'#8A8594'), avatar: (typeof r.avatar === 'string' && r.avatar.startsWith('data:image/jpeg;base64,')) ? r.avatar : null };
   S.members = m; S.membersLoaded = true; maybeOnboard(); render();
 }
 async function loadSlots(){
@@ -399,21 +418,38 @@ function openOthers(date, kind, uid){
 function openProfile(first){
   const cur = member(S.uid) || {};
   let color = cur.color || COLORS[Object.keys(S.members).length % COLORS.length];
-  const input = h('input',{value:cur.name||'', placeholder:'e.g. Mamá, Papá, Abuela…', maxlength:24});
+  const input = h('input',{value:cur.name||'', placeholder:'Your name', maxlength:24});
   const sw = h('div',{class:'swatches'});
   const drawSw = () => sw.replaceChildren(...COLORS.map(c => h('button',{class:'sw'+(c===color?' on':''), style:`background:${c}`, 'aria-label':'colour', onclick:()=>{ color=c; drawSw(); }})));
   drawSw();
+  let photo = cur.avatar || null;
+  const preview = h('div',{class:'pic-preview'});
+  const drawPic = () => preview.replaceChildren(photo ? h('img',{src:photo, alt:''}) : h('span',null, (input.value.trim()[0] || '🙂').toUpperCase()));
+  const fileIn = h('input',{type:'file', accept:'image/*', style:'display:none'});
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files && fileIn.files[0]; if (!f) return;
+    try{ photo = await photoToDataUrl(f); drawPic(); }catch(e){ toast('Couldn’t read that photo — try another one'); }
+    fileIn.value = '';
+  });
+  input.addEventListener('input', () => { if (!photo) drawPic(); });
+  const picRow = h('div',{class:'pic-row'}, preview,
+    h('div',{class:'pic-actions'},
+      h('button',{class:'chip', onclick:()=>fileIn.click()}, '📷 ' + (cur.avatar ? 'Change photo' : 'Add photo')),
+      h('button',{class:'chip', onclick:()=>{ photo = null; drawPic(); }}, 'Remove')),
+    fileIn);
+  setTimeout(drawPic, 0);
   const save = async () => {
     const name = input.value.trim().slice(0,24);
     if (!name) return toast('Add your name first');
-    try{ const { error } = await sb.from('members').upsert({ user_id:S.uid, name, color }); if (error) throw error; await loadMembers(); closeSheet(); toast(first ? `Welcome, ${name}!` : 'Saved'); if (first) setTimeout(()=>onboardingNext(), 400); }
+    try{ const { error } = await sb.from('members').upsert({ user_id:S.uid, name, color, avatar: photo }); if (error) throw error; await loadMembers(); closeSheet(); toast(first ? `Welcome, ${name}!` : 'Saved'); if (first) setTimeout(()=>onboardingNext(), 400); }
     catch(e){ writeFailed(e); }
   };
   sheet(
     h('h2',null, first ? 'Who are you?' : 'Your name & colour'),
     h('p',{class:'sub'}, 'This is how the rest of the family sees your bookings.'),
+    h('div',{class:'field'}, h('label',null,'Photo'), picRow),
     h('div',{class:'field'}, h('label',null,'Name'), input,
-      h('div',{class:'chips'}, ...['Mamá','Papá','Abuela','Abuelo','Mom','Dad','Grandma','Grandpa'].map(n => h('button',{class:'chip', onclick:()=>{ input.value=n; }}, n)))),
+      h('div',{class:'chips'}, ...['Ricardo','Johanna','Gunilla','Lars-Åke'].map(n => h('button',{class:'chip', onclick:()=>{ input.value=n; }}, n)))),
     h('div',{class:'field'}, h('label',null,'Colour'), sw),
     h('button',{class:'btn', onclick:save}, first ? 'Next' : 'Save'));
 }
