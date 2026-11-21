@@ -54,7 +54,12 @@ const CONF = self.APP_CONFIG || {};
 const APP_URL = location.origin + location.pathname.replace(/index\.html$/, '');
 const sb = createClient(CONF.supabaseUrl, CONF.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW', e));
+if ('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(e => console.warn('SW', e));
+  // when a new version takes over, reload once so the new screens appear
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded){ reloaded = true; location.reload(); } });
+}
 let installPrompt = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; render(); });
 window.addEventListener('appinstalled', () => { installPrompt = null; render(); });

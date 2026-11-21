@@ -1,5 +1,5 @@
 /* Service worker: installable app, fast start, push notifications. */
-const CACHE = 'preschool-runs-v5';
+const CACHE = 'preschool-runs-v6';
 const SHELL = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/badge-96.png'];
 
@@ -14,7 +14,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  e.respondWith(fetch(e.request).then(res => {
+  // always ask the server for the newest version (skip the browser's HTTP cache)
+  e.respondWith(fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }).then(res => {
     const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return res;
   }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html'))));
 });
