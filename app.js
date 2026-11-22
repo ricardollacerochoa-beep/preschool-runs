@@ -73,7 +73,7 @@ const S = {
   uid:null, email:null, phase:'loading', // loading | auth | verify | denied | app
   members:{}, membersLoaded:false, slots:{}, events:[], config:{}, priv:null, privLoaded:false, pushOn:false,
   weekStart: monday(new Date()), tab: location.hash === '#activity' ? 'activity' : 'week',
-  startedAt: Date.now(), lastSeenShown:null, channel:null,
+  startedAt: Date.now(), lastSeenShown:null, channel:null, board:{ period:'month', data:null },
 };
 const cfg = () => {
   const c = S.config || {};
@@ -254,7 +254,7 @@ function startData(){
   const t = {};
   const later = (k, fn) => { clearTimeout(t[k]); t[k] = setTimeout(fn, 250); };
   S.channel = sb.channel('family')
-    .on('postgres_changes', { event:'*', schema:'public', table:'slots' }, () => later('s', loadSlots))
+    .on('postgres_changes', { event:'*', schema:'public', table:'slots' }, () => { later('s', loadSlots); if (S.tab === 'rank') later('b', loadBoard); })
     .on('postgres_changes', { event:'*', schema:'public', table:'members' }, () => later('m', loadMembers))
     .on('postgres_changes', { event:'*', schema:'public', table:'config' }, () => later('c', loadConfig))
     .on('postgres_changes', { event:'INSERT', schema:'public', table:'events' }, p => {
@@ -266,7 +266,7 @@ function startData(){
     .subscribe();
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && S.phase === 'app'){ S.startedAt = Date.now(); loadAll(); }
+  if (document.visibilityState === 'visible' && S.phase === 'app'){ S.startedAt = Date.now(); loadAll(); if (S.tab === 'rank') loadBoard(); }
 });
 window.addEventListener('hashchange', () => { if (location.hash === '#activity'){ S.tab = 'activity'; openActivity(); } });
 function unseen(){
@@ -401,7 +401,7 @@ function openMine(date, kind, justBooked){
   sheet(
     h('h2',null, justBooked ? '✓ Booked!' : `Your ${KIND[kind].label.toLowerCase()}`),
     h('p',{class:'sub'}, `${KIND[kind].icon} ${KIND[kind].label} · ${fmtLong(date)} · ${slotTime(kind)}`),
-    justBooked ? h('div',{class:'hint', style:'margin:-6px 2px 12px'}, 'The family gets a notification. If you’ve subscribed your calendar, it will show up there too.') : null,
+    justBooked ? h('div',{class:'hint', style:'margin:-6px 2px 12px'}, 'The family gets a notification, and you earn +10 points once the run is done 🏆') : null,
     h('div',{class:'section-title', style:'margin-top:4px'}, 'Tell the preschool'),
     h('div',{class:'msgbox'}, preschoolMsg(date,kind,S.uid)),
     h('button',{class:'btn ghost', onclick:()=>copy(preschoolMsg(date,kind,S.uid), 'Copied — paste it in the preschool app')}, '📋 Copy message for the preschool app'),
@@ -627,6 +627,86 @@ function settingsView(){
   ];
 }
 
+/* ───────────────────────── ranking ───────────────────────── */
+const BADGES = {
+  early_bird:  ['🌅','Early bird','10 drop-offs done'],
+  home_runner: ['🏡','Home runner','10 pick-ups done'],
+  rescue_hero: ['🦸','Rescue hero','Took over 3 cancelled runs'],
+  planner:     ['📅','Planner','Booked 5 runs a week ahead'],
+  full_week:   ['🔥','Full week','A run every weekday in one week'],
+  century:     ['💯','Century','100 runs done'],
+};
+function boardRange(){
+  const now = new Date(), p = S.board.period;
+  if (p === 'week'){ const m = monday(now); return [iso(m), iso(addDays(m,6))]; }
+  if (p === 'month') return [iso(new Date(now.getFullYear(), now.getMonth(), 1)), iso(new Date(now.getFullYear(), now.getMonth()+1, 0))];
+  return ['2000-01-01', '2100-01-01'];
+}
+async function loadBoard(){
+  const [from, to] = boardRange();
+  const { data, error } = await sb.rpc('get_leaderboard', { p_from: from, p_to: to });
+  if (!error){ S.board.data = Array.isArray(data) ? data : []; render(); }
+}
+function rankingView(){
+  const out = [];
+  const periods = [['week','This week'],['month','This month'],['all','All time']];
+  out.push(h('div',{class:'seg', style:'margin-bottom:16px'}, ...periods.map(([k,l]) =>
+    h('button',{class: S.board.period===k?'on':'', onclick:()=>{ S.board.period = k; S.board.data = null; render(); loadBoard(); }}, l))));
+  const rows = S.board.data;
+  if (!rows){ out.push(h('div',{class:'card empty'}, 'Counting points…')); return out; }
+  const ranked = rows.filter(r => member(r.user_id));
+  const anyPoints = ranked.some(r => r.points > 0);
+
+  if (anyPoints){
+    const top = ranked.slice(0,3);
+    const order = [top[1], top[0], top[2]].filter(Boolean);
+    out.push(h('div',{class:'podium'}, ...order.map(r => {
+      const place = top.indexOf(r) + 1;
+      return h('div',{class:'pod p'+place},
+        h('div',{class:'pod-av'}, place === 1 ? h('span',{class:'crown'}, '👑') : null, avatar(r.user_id, place === 1 ? 68 : 54)),
+        h('div',{class:'pod-name'}, r.user_id === S.uid ? 'You' : realName(r.user_id)),
+        h('div',{class:'pod-pts'}, `${r.points} pts`),
+        h('div',{class:'pod-step'}, String(place)));
+    })));
+  } else {
+    out.push(h('div',{class:'card empty', style:'font-size:15px'}, h('div',{style:'font-size:40px;margin-bottom:6px'}, '👑'),
+      S.board.period === 'week' ? 'No runs done yet this week.' : S.board.period === 'month' ? 'No runs done yet this month.' : 'No runs done yet.',
+      h('br'), 'The first finished run takes the crown!'));
+  }
+
+  const list = h('div',{class:'card', style:'padding:6px 14px'});
+  ranked.forEach((r, i) => {
+    const earned = Object.keys(BADGES).filter(k => r.badges && r.badges[k]);
+    const bits = [`${r.runs} run${r.runs===1?'':'s'}`];
+    if (r.rescues) bits.push(`${r.rescues} rescue${r.rescues>1?'s':''}`);
+    if (r.late_cancels) bits.push(`${r.late_cancels} late cancel${r.late_cancels>1?'s':''}`);
+    list.appendChild(h('div',{class:'rank-row' + (r.user_id === S.uid ? ' me' : '')},
+      h('div',{class:'rank-n'}, String(i+1)), avatar(r.user_id, 38),
+      h('div',{class:'rank-txt'},
+        h('div',{class:'rank-name'}, r.user_id === S.uid ? `${realName(r.user_id)} (you)` : realName(r.user_id)),
+        h('div',{class:'rank-sub'}, bits.join(' · ')),
+        earned.length ? h('div',{class:'rank-badges'}, ...earned.map(k => h('span',{title:BADGES[k][1]}, BADGES[k][0]))) : null),
+      h('div',{class:'rank-pts'}, String(r.points), h('small',null,'pts'))));
+  });
+  out.push(list);
+
+  out.push(h('div',{class:'section-title'}, 'Badges'));
+  out.push(h('div',{class:'badge-grid'}, ...Object.entries(BADGES).map(([k,[ic,name,desc]]) => {
+    const who = ranked.filter(r => r.badges && r.badges[k]);
+    return h('div',{class:'badge-card' + (who.length ? ' got' : '')},
+      h('div',{class:'badge-ic'}, ic), h('b',null,name), h('small',null,desc),
+      who.length ? h('div',{class:'badge-who'}, ...who.map(r => avatar(r.user_id, 22))) : h('div',{class:'badge-who muted'}, 'Not yet'));
+  })));
+
+  out.push(h('div',{class:'section-title'}, 'How to earn points'));
+  out.push(h('div',{class:'card rules'},
+    h('div',null, h('b',null,'+10'), ' for every drop-off or pick-up, once it has happened'),
+    h('div',null, h('b',null,'+5'), ' rescue bonus: take a run someone cancelled (within 3 days)'),
+    h('div',null, h('b',null,'+2'), ' planner bonus: book a run at least a week ahead'),
+    h('div',null, h('b',{class:'neg'},'−5'), ' cancelling less than 24 hours before')));
+  return out;
+}
+
 /* ───────────────────────── render ───────────────────────── */
 function render(){
   const nav = document.getElementById('tabsnav');
@@ -643,10 +723,10 @@ function render(){
   const header = h('header',{class:'top'},
     h('div',{class:'brand'},
       h('small',null, me ? `${hello}, ${realName(S.uid)}` : 'Preschool Runs'),
-      h('h1',null, S.tab === 'activity' ? 'Activity' : S.tab === 'settings' ? 'Settings' : (cfg().child ? `${cfg().child}’s week` : 'This week')),
+      h('h1',null, S.tab === 'activity' ? 'Activity' : S.tab === 'settings' ? 'Settings' : S.tab === 'rank' ? 'Family ranking' : (cfg().child ? `${cfg().child}’s week` : 'This week')),
       cfg().preschool && S.tab === 'week' ? h('span',{class:'school'}, '🏫 ' + cfg().preschool) : null),
     me ? h('button',{class:'mechip', 'aria-label':'My settings', onclick:()=>{ S.tab='settings'; render(); }}, avatar(S.uid, 40)) : null);
-  const body = S.tab === 'activity' ? activityView() : S.tab === 'settings' ? settingsView() : weekView();
+  const body = S.tab === 'activity' ? activityView() : S.tab === 'settings' ? settingsView() : S.tab === 'rank' ? rankingView() : weekView();
   $app.replaceChildren(header, ...body);
   drawTabs();
 }
@@ -655,8 +735,8 @@ function drawTabs(){
   const n = unseen().length;
   const tab = (id, ic, label, badge) => h('button',{class:'tab'+(S.tab===id?' on':''), onclick:()=>{
       S.tab = id; if (location.hash) history.replaceState(null,'',location.pathname + location.search);
-      if (id === 'activity') openActivity(); else render(); window.scrollTo(0,0); }},
+      if (id === 'activity') openActivity(); else { render(); if (id === 'rank') loadBoard(); } window.scrollTo(0,0); }},
     h('span',{class:'ic'}, ic), label, badge ? h('span',{class:'badge'}, String(badge)) : null);
-  document.getElementById('tabs').replaceChildren(tab('week','🗓️','Week'), tab('activity','🔔','Activity', n), tab('settings','⚙️','Settings'));
+  document.getElementById('tabs').replaceChildren(tab('week','🗓️','Week'), tab('rank','🏆','Ranking'), tab('activity','🔔','Activity', n), tab('settings','⚙️','Settings'));
 }
 render();

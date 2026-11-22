@@ -175,6 +175,39 @@
   .pic-preview{width:76px;height:76px;border-radius:50%;overflow:hidden;flex:none;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;font-weight:800;box-shadow:var(--shadow)}
   .pic-preview img{width:100%;height:100%;object-fit:cover}
   .pic-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  /* ranking */
+  .podium{display:flex;align-items:flex-end;justify-content:center;gap:10px;margin:6px 0 16px}
+  .pod{flex:1;max-width:130px;display:flex;flex-direction:column;align-items:center;text-align:center}
+  .pod-av{position:relative;margin-bottom:6px}
+  .pod-av .dot{box-shadow:0 6px 16px rgba(0,0,0,.15);border:3px solid var(--card)}
+  .crown{position:absolute;top:-24px;left:50%;transform:translateX(-50%) rotate(-8deg);font-size:28px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.2));animation:bob 2.4s ease-in-out infinite}
+  @keyframes bob{50%{transform:translateX(-50%) rotate(-8deg) translateY(-4px)}}
+  .pod-name{font-weight:800;font-size:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pod-pts{font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px}
+  .pod-step{width:100%;border-radius:16px 16px 6px 6px;color:#fff;font-family:'Fraunces',Georgia,serif;font-weight:700;font-size:26px;display:flex;align-items:flex-start;justify-content:center;padding-top:8px}
+  .p1 .pod-step{height:96px;background:linear-gradient(160deg,#F7B267,#EF6F53);box-shadow:0 10px 24px rgba(239,111,83,.35)}
+  .p2 .pod-step{height:70px;background:linear-gradient(160deg,#C9C3D3,#9C93AA)}
+  .p3 .pod-step{height:52px;background:linear-gradient(160deg,#E7B68C,#C68A5A)}
+  .rank-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+  .rank-row:last-child{border-bottom:0}
+  .rank-row.me .rank-name{color:var(--accent)}
+  .rank-n{width:20px;text-align:center;font-weight:800;color:var(--muted)}
+  .rank-txt{flex:1;min-width:0}
+  .rank-name{font-weight:800;font-size:15px}
+  .rank-sub{font-size:12px;color:var(--muted);font-weight:700}
+  .rank-badges{margin-top:3px;font-size:16px;letter-spacing:2px}
+  .rank-pts{font-family:'Fraunces',Georgia,serif;font-size:24px;font-weight:700;text-align:right;line-height:1}
+  .rank-pts small{display:block;font-family:'Nunito',sans-serif;font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase}
+  .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .badge-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:2px;opacity:.6;box-shadow:var(--shadow)}
+  .badge-card.got{opacity:1;border-color:rgba(239,111,83,.45);background:linear-gradient(160deg,var(--card),rgba(247,161,94,.12))}
+  .badge-ic{font-size:26px}
+  .badge-card b{font-size:14px}
+  .badge-card small{font-size:12px;color:var(--muted);line-height:1.3}
+  .badge-who{display:flex;gap:4px;margin-top:6px;font-size:12px;font-weight:700}
+  .rules div{font-size:14px;padding:5px 0;line-height:1.4}
+  .rules b{display:inline-block;min-width:36px;color:var(--ok)}
+  .rules b.neg{color:var(--warn)}
 </style>
 </head>
 <body>
